@@ -64,7 +64,7 @@ const baseURL = "https://bdevgp.github.io/CoxinhaGameStuff/"; // Your GitHub Pag
 // Number of background frames and filename pattern (e.g. bg0001.png)
 const totalBgFrames = 70; // Your specified 70 frames
 const bgFramePrefix = "ezgif-frame-"; // Corrected prefix based on your example
-const bgFrameDigits = 3;          // Corrected to 3 digits (e.g., 015, 016)
+const bgFrameDigits = 3;           // Corrected to 3 digits (e.g., 015, 016)
 
 // Player sprite filenames per state & character
 const playerSprites = {
@@ -128,4 +128,335 @@ function checkAssetsLoaded() {
 
 // Load background frames
 for (let i = 1; i <= totalBgFrames; i++) {
-  const numStr = i.toString().padStart(bgFrameDigits,
+  const numStr = i.toString().padStart(bgFrameDigits, "0");
+  const fullURL = `${baseURL}${bgFramePrefix}${numStr}.png`;
+  loadImage(fullURL, (img) => {
+    bgFrames[i - 1] = img;
+  });
+}
+
+// Load player sprites for both characters
+// char1
+playerImages.char1.idle = loadImage(baseURL + playerSprites.char1.idle, () => {});
+playerSprites.char1.walk.forEach((src, i) => {
+  playerImages.char1.walk[i] = loadImage(baseURL + src, () => {});
+});
+playerImages.char1.jump = loadImage(baseURL + playerSprites.char1.jump, () => {});
+playerImages.char1.stop = loadImage(baseURL + playerSprites.char1.stop, () => {});
+// char2
+playerImages.char2.idle = loadImage(baseURL + playerSprites.char2.idle, () => {});
+playerSprites.char2.walk.forEach((src, i) => {
+  playerImages.char2.walk[i] = loadImage(baseURL + src, () => {});
+});
+playerImages.char2.jump = loadImage(baseURL + playerSprites.char2.jump, () => {});
+playerImages.char2.stop = loadImage(baseURL + playerSprites.char2.stop, () => {});
+
+// Platform and door images
+const platformImg = loadImage(baseURL + platformImageSrc, () => {});
+const doorImg = loadImage(baseURL + doorImageSrc, () => {});
+
+// Background music
+const bgMusic = new Audio(baseURL + bgMusicSrc);
+bgMusic.loop = true;
+bgMusic.volume = 0.5;
+bgMusic.crossOrigin = "Anonymous";
+
+
+// --- GAME LOGIC (UNCHANGED FROM YOUR ORIGINAL CODE) ---
+
+// Game state variables
+const GRAVITY = 0.5;
+const JUMP_POWER = -10;
+const PLAYER_SPEED = 3;
+const TILE_SIZE = 32; // Assuming platforms are built on a 32x32 grid
+
+let player = null;
+let platforms = [];
+let door = null;
+let currentCharacter = 'char1'; // Default character
+let keys = {};
+let isGameOver = false;
+
+let frameCount = 0;
+const WALK_ANIM_FPS = 8; // Frames per second for walk animation
+
+// Player Class
+class Player {
+    constructor(x, y, charType) {
+        this.x = x;
+        this.y = y;
+        this.width = TILE_SIZE; // Adjust based on your sprite size
+        this.height = TILE_SIZE; // Adjust based on your sprite size
+        this.velX = 0;
+        this.velY = 0;
+        this.isOnGround = false;
+        this.isJumping = false;
+        this.facing = 'right'; // 'left' or 'right'
+        this.charType = charType;
+        this.currentFrame = 0;
+    }
+
+    update() {
+        if (!this.isJumping && !this.isOnGround) {
+            this.velY += GRAVITY; // Apply gravity if falling
+        }
+
+        this.x += this.velX;
+        this.y += this.velY;
+
+        // Simple boundaries (for demo)
+        if (this.x < 0) this.x = 0;
+        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
+
+        // Check for ground collision (assuming ground is bottom of canvas for now)
+        if (this.y + this.height > canvas.height) {
+            this.y = canvas.height - this.height;
+            this.velY = 0;
+            this.isOnGround = true;
+            this.isJumping = false;
+        } else {
+            this.isOnGround = false;
+        }
+
+        // Platform collision
+        this.isOnGround = false; // Reset for current frame
+        for (const platform of platforms) {
+            if (this.checkCollision(platform)) {
+                // If landing on top of platform
+                if (this.velY > 0 && this.y + this.height - this.velY <= platform.y) {
+                    this.y = platform.y - this.height;
+                    this.velY = 0;
+                    this.isOnGround = true;
+                    this.isJumping = false;
+                }
+                // If hitting platform from below (head bump)
+                else if (this.velY < 0 && this.y >= platform.y + platform.height - this.velY) {
+                    this.y = platform.y + platform.height;
+                    this.velY = 0; // Stop upward movement
+                }
+                 // If hitting sides of platform
+                else if (this.velX > 0 && this.x + this.width - this.velX <= platform.x) {
+                    this.x = platform.x - this.width;
+                    this.velX = 0;
+                }
+                else if (this.velX < 0 && this.x - this.velX >= platform.x + platform.width) {
+                    this.x = platform.x + platform.width;
+                    this.velX = 0;
+                }
+            }
+        }
+         // Apply gravity if player is in the air after collision checks
+        if (!this.isOnGround && !this.isJumping) {
+            this.velY += GRAVITY;
+        }
+    }
+
+    draw() {
+        let currentImage;
+        const charImages = playerImages[this.charType];
+
+        if (this.isJumping || !this.isOnGround) {
+            currentImage = charImages.jump;
+        } else if (this.velX !== 0) {
+            // Walk animation
+            const walkFrames = charImages.walk;
+            const frameIndex = Math.floor(frameCount / (60 / WALK_ANIM_FPS)) % walkFrames.length;
+            currentImage = walkFrames[frameIndex];
+        } else {
+            currentImage = charImages.idle;
+        }
+
+        if (currentImage) {
+            ctx.save();
+            if (this.facing === 'left') {
+                ctx.translate(this.x + this.width, this.y);
+                ctx.scale(-1, 1);
+                ctx.drawImage(currentImage, 0, 0, this.width, this.height);
+            } else {
+                ctx.drawImage(currentImage, this.x, this.y, this.width, this.height);
+            }
+            ctx.restore();
+        } else {
+            // Fallback for missing images
+            ctx.fillStyle = 'red';
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+
+    jump() {
+        if (this.isOnGround) {
+            this.velY = JUMP_POWER;
+            this.isOnGround = false;
+            this.isJumping = true;
+        }
+    }
+
+    checkCollision(other) {
+        return this.x < other.x + other.width &&
+               this.x + this.width > other.x &&
+               this.y < other.y + other.height &&
+               this.y + this.height > other.y;
+    }
+}
+
+// Platform Class
+class Platform {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+
+    draw() {
+        if (platformImg) {
+            // Draw tiled platform if image is smaller than platform
+            const numTilesX = Math.ceil(this.width / platformImg.width);
+            const numTilesY = Math.ceil(this.height / platformImg.height);
+            for (let i = 0; i < numTilesX; i++) {
+                for (let j = 0; j < numTilesY; j++) {
+                    ctx.drawImage(platformImg, this.x + i * platformImg.width, this.y + j * platformImg.height,
+                                  Math.min(platformImg.width, this.x + this.width - (this.x + i * platformImg.width)),
+                                  Math.min(platformImg.height, this.y + this.height - (this.y + j * platformImg.height)));
+                }
+            }
+        } else {
+            ctx.fillStyle = 'green'; // Fallback color
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+}
+
+// Door Class
+class Door {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+
+    draw() {
+        if (doorImg) {
+            ctx.drawImage(doorImg, this.x, this.y, this.width, this.height);
+        } else {
+            ctx.fillStyle = 'blue'; // Fallback color
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+}
+
+// Initialize game elements
+function initializeGame() {
+    player = new Player(50, canvas.height - TILE_SIZE, currentCharacter); // Player starts on the ground
+    
+    platforms = [
+        new Platform(100, canvas.height - 70, 100, 20),
+        new Platform(250, canvas.height - 120, 80, 20),
+        new Platform(350, canvas.height - 170, 120, 20)
+    ];
+
+    door = new Door(canvas.width - TILE_SIZE - 20, canvas.height - TILE_SIZE * 2, TILE_SIZE, TILE_SIZE * 2); // Example door placement
+}
+
+// Game loop
+function gameLoop() {
+    if (isGameOver) {
+        // Handle game over screen or restart
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '30px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('DEMO END', canvas.width / 2, canvas.height / 2);
+        return;
+    }
+
+    frameCount++;
+
+    // Update background animation
+    bgFrameIndex = Math.floor(frameCount / 2) % totalBgFrames; // Change frame every 2 frames
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw background
+    if (bgFrames[bgFrameIndex]) {
+        ctx.drawImage(bgFrames[bgFrameIndex], 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = 'lightblue'; // Fallback if bg not loaded
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+
+    // Handle player input
+    player.velX = 0;
+    if (keys['ArrowLeft'] || keys['left']) {
+        player.velX = -PLAYER_SPEED;
+        player.facing = 'left';
+    }
+    if (keys['ArrowRight'] || keys['right']) {
+        player.velX = PLAYER_SPEED;
+        player.facing = 'right';
+    }
+    if (keys['ArrowUp'] || keys['jump']) {
+        player.jump();
+    }
+
+    // Update player and platforms
+    player.update();
+    
+    // Draw platforms
+    platforms.forEach(platform => platform.draw());
+    
+    // Draw door
+    door.draw();
+
+    // Draw player
+    player.draw();
+
+    // Check if player reached the door
+    if (player.checkCollision(door)) {
+        isGameOver = true; // Simple game over for demo
+        console.log("DEMO END");
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Asset loading and game start
+function onAssetsLoaded() {
+    document.getElementById("loading-screen").style.display = "none";
+    document.getElementById("game-container").style.display = "block";
+    initializeGame();
+    bgMusic.play().catch(error => console.log("Background music autoplay prevented:", error));
+    gameLoop();
+}
+
+// Event Listeners
+document.addEventListener("keydown", (e) => {
+    keys[e.key] = true;
+    if (e.key === '1') currentCharacter = 'char1';
+    if (e.key === '2') currentCharacter = 'char2';
+    if (player) player.charType = currentCharacter; // Update player charType dynamically
+});
+
+document.addEventListener("keyup", (e) => {
+    keys[e.key] = false;
+});
+
+// Mobile controls
+document.getElementById('leftBtn').addEventListener('touchstart', (e) => { e.preventDefault(); keys['left'] = true; player.facing = 'left'; });
+document.getElementById('leftBtn').addEventListener('touchend', (e) => { e.preventDefault(); keys['left'] = false; });
+document.getElementById('rightBtn').addEventListener('touchstart', (e) => { e.preventDefault(); keys['right'] = true; player.facing = 'right'; });
+document.getElementById('rightBtn').addEventListener('touchend', (e) => { e.preventDefault(); keys['right'] = false; });
+document.getElementById('jumpBtn').addEventListener('touchstart', (e) => { e.preventDefault(); keys['jump'] = true; player.jump(); });
+document.getElementById('jumpBtn').addEventListener('touchend', (e) => { e.preventDefault(); keys['jump'] = false; });
+
+// Prevent context menu on long press
+document.querySelectorAll('.control-btn').forEach(button => {
+    button.addEventListener('contextmenu', (e) => e.preventDefault());
+});
+
+</script>
+</body>
+</html>
