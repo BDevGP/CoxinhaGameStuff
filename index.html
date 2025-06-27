@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Super Coxinha Adventure Demo 1</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; overflow: hidden;
+    height: 100%; user-select: none;
+  }
+  #loading-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: #222; color: #fff; display: flex;
+    justify-content: center; align-items: center;
+    font-family: sans-serif; font-size: 24px; z-index: 1000;
+  }
+  #game-container {
+    position: relative; width: 100vw; height: 100vh;
+    overflow: hidden;
+    display: none; /* Will be set to 'block' by JavaScript when assets load */
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: #000;
+  }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 20px;
+    z-index: 1001;
+  }
+  button.control-btn {
+    width: 60px; height: 60px;
+    font-size: 24px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(255,255,255,0.85);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-screen">supercoxinhaadventuredemo1</div>
+<div id="game-container">
+  <canvas id="gameCanvas" width="480" height="320"></canvas>
+  <div id="controls">
+    <button id="leftBtn" class="control-btn">←</button>
+    <button id="jumpBtn" class="control-btn">↑</button>
+    <button id="rightBtn" class="control-btn">→</button>
+  </div>
+</div>
+
+<script>
+// === CONFIGURATION ===
+// 1. SET YOUR BASE URL HERE
+// This should be the URL to the folder where all your assets are hosted.
+// IMPORTANT: Make sure it ends with a forward slash /
+const baseURL = "https://bdevgp.github.io/CoxinhaGameStuff/"; // Your GitHub Pages URL
+
+// 2. SET YOUR FILENAMES HERE
+// Number of background frames and filename pattern (e.g. bg0001.png)
+const totalBgFrames = 70; // Your specified 70 frames
+const bgFramePrefix = "ezgif-frame-"; // Corrected prefix based on your example
+const bgFrameDigits = 3;          // Corrected to 3 digits (e.g., 015, 016)
+
+// Player sprite filenames per state & character
+const playerSprites = {
+  char1: {
+    idle: "coxinhapadrao_stand1.png",
+    walk: ["coxinhapadrao_walk1.png", "coxinhapadrao_walk2.png"], // Assuming you have a second walk frame, if not, duplicate walk1
+    jump: "coxinhapadrao_jump1.png",
+    stop: "coxinhapadrao_stand1.png" // Using stand1 as stop, as specified
+  },
+  char2: {
+    idle: "coxinhasushi_stand1.png",
+    walk: ["coxinhasushi_walk1.png", "coxinhasushi_walk2.png"], // Assuming c2_walk1.png and c2_walk2.png, similar to char1
+    jump: "coxinhasushi_jump1.png",
+    stop: "coxinhasushi_stand1.png" // Using stand1 as stop, as specified
+  }
+};
+
+// Platform and door
+const platformImageSrc = "fortalbox.png";
+const doorImageSrc = "door.png"; // You mentioned "no file yet", so keeping the default. You'll need to create this file.
+
+// Background music file
+const bgMusicSrc = "videoplayback.mp3";
+
+
+// === GLOBALS (No changes needed below this line for URLs) ===
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let SoundStatus = 1;
+
+const bgFrames = [];
+let bgFrameIndex = 0;
+
+const playerImages = {
+  char1: { idle: null, walk: [], jump: null, stop: null },
+  char2: { idle: null, walk: [], jump: null, stop: null }
+};
+
+let assetsToLoad = 0;
+
+function loadImage(src, onload) {
+  assetsToLoad++;
+  const img = new Image();
+  // CORS compatibility for assets from other domains
+  img.crossOrigin = "Anonymous";
+  img.src = src;
+  img.onload = () => { assetsToLoad--; onload(img); checkAssetsLoaded(); };
+  img.onerror = () => {
+    console.error("Failed loading image:", src);
+    assetsToLoad--; checkAssetsLoaded();
+  };
+  return img;
+}
+
+function checkAssetsLoaded() {
+  if (assetsToLoad === 0) {
+    onAssetsLoaded();
+  }
+}
+
+// Load background frames
+for (let i = 1; i <= totalBgFrames; i++) {
+  const numStr = i.toString().padStart(bgFrameDigits,
